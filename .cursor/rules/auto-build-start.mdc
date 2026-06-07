@@ -1,0 +1,32 @@
+---
+description: Anweisungen zum automatischen Bauen und Starten der App nach Code-Änderungen
+globs: *
+alwaysApply: true
+---
+
+# Automatisches Bauen und Starten
+
+Nach Abschluss einer Bearbeitung, **bei der tatsächliche Code-Änderungen vorgenommen wurden**, MUSST du die Anwendung automatisch bauen und starten, um die Änderungen zu überprüfen und sicherzustellen, dass alles funktioniert. Wurden keine Code-Änderungen vorgenommen (z.B. bei reinen Informationsanfragen), entfällt dieser Schritt.
+
+## Befehle zum Bauen und Starten
+
+Die App ist eine Compose Multiplatform Desktop-Anwendung. Verwende das Shell-Tool, um die App zu starten. 
+
+Führe zum Starten je nach Betriebssystem den folgenden Befehl aus (aktuelles System ist Windows):
+
+- **Auf Windows**:
+  ```powershell
+  Get-CimInstance Win32_Process -Filter "Name = 'java.exe'" | Where-Object { $_.CommandLine -like "*dev.treder.info.claude.MainKt*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  .\gradlew.bat :desktopApp:run
+  ```
+
+- **Auf macOS/Linux**:
+  ```bash
+  pkill -f "dev.treder.info.claude.MainKt" || true
+  ./gradlew :desktopApp:run
+  ```
+
+*Wichtig*:
+1. Führe den entsprechenden Start-Befehl **automatisch am Ende deiner Antwort/Bearbeitung** aus, sofern Code geändert wurde, ohne vorher nochmal beim Nutzer nachzufragen.
+2. Beachte, dass die Anwendung direkt im System Tray startet und beim Start kein sichtbares Fenster öffnet. Das Popup lässt sich per Linksklick auf das Tray-Icon öffnen und über das X oben rechts (oder erneuten Tray-Klick) wieder schließen.
+3. Dieser Prozess soll gewährleisten, dass die neueste Version nach jeder Anpassung direkt zur Verfügung steht.

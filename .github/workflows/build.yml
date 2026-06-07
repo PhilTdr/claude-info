@@ -1,0 +1,161 @@
+name: GitHub Actions Build
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "*.*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            task: packageDeb
+            artifact-path: desktopApp/build/compose/binaries/main/deb/
+            artifact-name: linux
+            arch-suffix: ""
+          - os: macos-latest
+            task: packageDmg
+            artifact-path: desktopApp/build/compose/binaries/main/dmg/
+            artifact-name: macos-arm64
+            arch-suffix: "-arm64"
+          - os: macos-15-intel
+            task: packageDmg
+            artifact-path: desktopApp/build/compose/binaries/main/dmg/
+            artifact-name: macos-x64
+            arch-suffix: "-x64"
+          - os: windows-latest
+            task: signMsi
+            artifact-path: desktopApp/build/compose/binaries/main/msi/
+            artifact-name: windows
+            arch-suffix: ""
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        if: runner.os != 'Windows'
+        run: chmod +x gradlew
+
+      - name: Import macOS signing cert
+        if: runner.os == 'macOS' && env.MAC_SIGN_P12_BASE64 != ''
+        env:
+          MAC_SIGN_P12_BASE64: ${{ secrets.MAC_SIGN_P12_BASE64 }}
+          P12_PASS: ${{ secrets.MAC_SIGN_P12_PASSWORD }}
+          KC_PASS: ci-build-keychain
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain"
+          echo "$MAC_SIGN_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASS" -T /usr/bin/codesign
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASS" "$KEYCHAIN"
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Import Windows signing PFX
+        if: runner.os == 'Windows' && env.WIN_SIGN_PFX_BASE64 != ''
+        env:
+          WIN_SIGN_PFX_BASE64: ${{ secrets.WIN_SIGN_PFX_BASE64 }}
+        shell: pwsh
+        run: |
+          $pfxBytes = [Convert]::FromBase64String($env:WIN_SIGN_PFX_BASE64)
+          $pfxPath  = Join-Path $env:RUNNER_TEMP "claudeinfo-signing.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+          "WIN_SIGN_PFX_PATH=$pfxPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build with Gradle
+        env:
+          WIN_SIGN_PFX_PASSWORD: ${{ secrets.WIN_SIGN_PFX_PASSWORD }}
+        run: ./gradlew :desktopApp:${{ matrix.task }}
+
+      - name: Rename artifacts with arch suffix
+        if: matrix.arch-suffix != ''
+        shell: bash
+        run: |
+          for file in ${{ matrix.artifact-path }}*; do
+            filename=$(basename "$file")
+            extension="${filename##*.}"
+            name="${filename%.*}"
+            mv "$file" "${{ matrix.artifact-path }}${name}${{ matrix.arch-suffix }}.${extension}"
+          done
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CursorInfo-${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-path }}
+          if-no-files-found: error
+
+      - name: Cleanup PFX
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: if ($env:WIN_SIGN_PFX_PATH -and (Test-Path $env:WIN_SIGN_PFX_PATH)) { Remove-Item $env:WIN_SIGN_PFX_PATH -Force }
+
+      - name: Cleanup macOS keychain
+        if: always() && runner.os == 'macOS'
+        run: security delete-keychain "$RUNNER_TEMP/build.keychain" 2>/dev/null || true
+
+  release:
+    name: Create Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.msi" -o -name "*.dmg" -o -name "*.deb" \) -exec cp {} release/ \;
+          ls -la release/
+
+      - name: Generate SHA-256 sums
+        working-directory: release
+        run: sha256sum *.msi *.dmg *.deb > SHA256SUMS.txt
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            release/*.msi
+            release/*.dmg
+            release/*.deb
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.msi
+            release/*.dmg
+            release/*.deb
+            release/SHA256SUMS.txt
+          generate_release_notes: true

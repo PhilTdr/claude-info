@@ -1,0 +1,24 @@
+---
+description: README bei relevanten Änderungen aktualisieren
+alwaysApply: true
+---
+
+# README aktuell halten
+
+Wenn du Änderungen am Projekt vornimmst, prüfe ob diese für die `README.md` relevant sind. Falls ja, aktualisiere die README entsprechend mit.
+
+## Relevante Änderungen
+
+- Neue oder entfernte Features
+- Änderungen am Tech Stack (Abhängigkeiten, Versionen, Frameworks)
+- Änderungen an der Architektur oder Schichtenaufteilung
+- Neue oder geänderte Build-/Ausführungsbefehle
+- Geänderte Datenspeicherungspfade oder -formate
+- Neue Plattformunterstützung oder -einschränkungen
+
+## Vorgehen
+
+1. Lies die aktuelle `README.md` bevor du sie änderst
+2. Passe nur die betroffenen Abschnitte an — keine unnötigen Umstrukturierungen
+3. Halte den bestehenden Stil und die Sprache bei
+4. Füge neue Abschnitte nur hinzu, wenn ein bestehendes Feature-Set nicht ausreicht

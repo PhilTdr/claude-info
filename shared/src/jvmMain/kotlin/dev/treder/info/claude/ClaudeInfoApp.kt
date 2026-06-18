@@ -26,18 +26,26 @@ class ClaudeInfoApp {
     private val parser = JsonlUsageParser()
     private val entryCache = JsonlEntryCache(parser)
     private val pricingApi = LiteLlmPricingApi()
-    private val pricingRepository: PricingRepository = JvmPricingRepository(pricingApi)
-    private val aggregator = UsageAggregator(pricingRepository)
+
+    // Starts fetching prices immediately and keeps them fresh for the app's
+    // lifetime, independent of whether the popup is open.
+    private val pricingRepository: PricingRepository = JvmPricingRepository(
+        api = pricingApi,
+        scope = appScope,
+    )
+    private val aggregator = UsageAggregator()
     private val settingsReader = ClaudeSettingsReader()
 
     val usageRepository: UsageRepository = JvmUsageRepository(
         cache = entryCache,
         aggregator = aggregator,
+        pricing = pricingRepository,
         scope = appScope,
     )
 
     fun createViewModel(): UsageViewModel = UsageViewModel(
-        repository = usageRepository,
+        usageRepository = usageRepository,
+        pricingRepository = pricingRepository,
         preferredModelProvider = { settingsReader.readPreferredModel() },
     )
 }

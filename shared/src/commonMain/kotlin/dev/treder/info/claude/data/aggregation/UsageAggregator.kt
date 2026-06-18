@@ -1,17 +1,21 @@
 package dev.treder.info.claude.data.aggregation
 
 import dev.treder.info.claude.domain.model.*
+import dev.treder.info.claude.domain.model.PricingTable
 import dev.treder.info.claude.domain.model.YearMonth
-import dev.treder.info.claude.domain.repository.PricingRepository
 import kotlinx.datetime.*
 import kotlin.time.Instant
 
-class UsageAggregator(private val pricing: PricingRepository) {
+/**
+ * Pure aggregation of usage entries into per-day / per-month totals. Prices are
+ * passed in as a [PricingTable] snapshot, so this class has no I/O and no state.
+ */
+class UsageAggregator {
 
-    suspend fun aggregateDay(entries: List<UsageEntry>, date: LocalDate, zone: TimeZone): DayUsage {
+    fun aggregateDay(entries: List<UsageEntry>, date: LocalDate, zone: TimeZone, pricing: PricingTable): DayUsage {
         val from = date.atStartOfDayIn(zone)
         val to = date.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone)
-        val byModel = aggregateRange(entries, from, to)
+        val byModel = aggregateRange(entries, from, to, pricing)
         return DayUsage(
             date = date,
             total = sumTotal(byModel),
@@ -19,12 +23,12 @@ class UsageAggregator(private val pricing: PricingRepository) {
         )
     }
 
-    suspend fun aggregateMonth(entries: List<UsageEntry>, month: YearMonth, zone: TimeZone): MonthUsage? {
+    fun aggregateMonth(entries: List<UsageEntry>, month: YearMonth, zone: TimeZone, pricing: PricingTable): MonthUsage? {
         if (entries.isEmpty()) return null
 
         val from = month.atStartOfMonth().atStartOfDayIn(zone)
         val to = month.next().atStartOfMonth().atStartOfDayIn(zone)
-        val byModel = aggregateRange(entries, from, to)
+        val byModel = aggregateRange(entries, from, to, pricing)
 
         val activeDays = entries.asSequence()
             .filter { it.timestamp >= from && it.timestamp < to }
@@ -33,7 +37,7 @@ class UsageAggregator(private val pricing: PricingRepository) {
             .sortedDescending()
             .toList()
         if (activeDays.isEmpty()) return null
-        val days = activeDays.map { aggregateDay(entries, it, zone) }
+        val days = activeDays.map { aggregateDay(entries, it, zone, pricing) }
 
         return MonthUsage(
             month = month,
@@ -43,16 +47,16 @@ class UsageAggregator(private val pricing: PricingRepository) {
         )
     }
 
-    private suspend fun aggregateRange(entries: List<UsageEntry>, from: Instant, to: Instant): List<TokenUsage> {
+    private fun aggregateRange(entries: List<UsageEntry>, from: Instant, to: Instant, pricing: PricingTable): List<TokenUsage> {
         val inRange = entries.filter { it.timestamp >= from && it.timestamp < to }
         if (inRange.isEmpty()) return emptyList()
 
         val grouped = inRange.groupBy { it.model }
-        return grouped.map { (model, list) -> aggregateModel(model, list) }
+        return grouped.map { (model, list) -> aggregateModel(model, list, pricing) }
             .sortedByDescending { it.inputTokens + it.outputTokens + it.cacheWriteTokens + it.cacheReadTokens }
     }
 
-    private suspend fun aggregateModel(model: String, list: List<UsageEntry>): TokenUsage {
+    private fun aggregateModel(model: String, list: List<UsageEntry>, pricing: PricingTable): TokenUsage {
         var input = 0L
         var output = 0L
         var cacheRead = 0L
@@ -65,7 +69,7 @@ class UsageAggregator(private val pricing: PricingRepository) {
             c5m += e.cacheCreation5mTokens
             c1h += e.cacheCreation1hTokens
         }
-        val price = pricing.pricingFor(model)
+        val price = pricing.forModel(model)
         val costUsd = (input * price.inputPerMTok +
                 output * price.outputPerMTok +
                 cacheRead * price.cacheReadPerMTok +

@@ -6,4 +6,9 @@ data class ModelPricing(
     val cacheReadPerMTok: Double,
     val cacheCreate5mPerMTok: Double,
     val cacheCreate1hPerMTok: Double,
-)
+) {
+    companion object {
+        /** Used for models the pricing feed does not list — contributes zero cost. */
+        val ZERO: ModelPricing = ModelPricing(0.0, 0.0, 0.0, 0.0, 0.0)
+    }
+}

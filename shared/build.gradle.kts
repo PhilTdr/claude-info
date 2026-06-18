@@ -28,6 +28,9 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
+        jvmTest.dependencies {
+            implementation(libs.kotlinx.coroutines.test)
+        }
         jvmMain.dependencies {
             implementation(libs.ktor.client.cio)
             // The Kotlin Multiplatform / Gradle 9.1 combination does not always

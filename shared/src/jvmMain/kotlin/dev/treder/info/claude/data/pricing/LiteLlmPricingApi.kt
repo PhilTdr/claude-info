@@ -18,9 +18,9 @@ class LiteLlmPricingApi(
     private val client: HttpClient = defaultClient(),
     private val url: String = LITE_LLM_URL,
     private val json: Json = parserJson,
-) {
+) : PricingApi {
 
-    suspend fun fetch(): Map<String, ModelPricing> {
+    override suspend fun fetch(): Map<String, ModelPricing> {
         val response: HttpResponse = client.get(url)
         val text = response.bodyAsText()
         val raw: Map<String, LiteLlmModelEntry> = json.decodeFromString(text)

@@ -1,15 +1,14 @@
 package dev.treder.info.claude.data.aggregation
 
 import dev.treder.info.claude.domain.model.ModelPricing
+import dev.treder.info.claude.domain.model.PricingTable
 import dev.treder.info.claude.domain.model.UsageEntry
 import dev.treder.info.claude.domain.model.YearMonth
-import dev.treder.info.claude.domain.repository.PricingRepository
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Instant
-import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
@@ -25,21 +24,19 @@ class UsageAggregatorTest {
         cacheCreate1hPerMTok = 10.0,
     )
 
-    private val pricing = object : PricingRepository {
-        override suspend fun pricingFor(model: String): ModelPricing = opusPricing
-    }
+    private val pricing = PricingTable(mapOf("claude-opus-4-7" to opusPricing))
 
-    private val aggregator = UsageAggregator(pricing)
+    private val aggregator = UsageAggregator()
     private val utc = TimeZone.of("UTC")
 
     @Test
-    fun aggregateDayFiltersEntriesOutsideTheDay() = runBlocking {
+    fun aggregateDayFiltersEntriesOutsideTheDay() {
         val day = LocalDate(2026, 5, 4)
         val inDay = entry("2026-05-04T12:00:00Z", input = 1_000_000)
         val nextDay = entry("2026-05-05T00:00:01Z", input = 1_000_000)
         val previousDay = entry("2026-05-03T23:59:59Z", input = 1_000_000)
 
-        val result = aggregator.aggregateDay(listOf(inDay, nextDay, previousDay), day, utc)
+        val result = aggregator.aggregateDay(listOf(inDay, nextDay, previousDay), day, utc, pricing)
 
         assertEquals(1, result.byModel.size)
         assertEquals(1_000_000L, result.total?.inputTokens ?: 0L)
@@ -47,7 +44,7 @@ class UsageAggregatorTest {
     }
 
     @Test
-    fun aggregateMonthIncludesDailyBreakdownAndSumsCorrectly() = runBlocking {
+    fun aggregateMonthIncludesDailyBreakdownAndSumsCorrectly() {
         val month = YearMonth(2026, Month.MAY)
         val entries = listOf(
             entry("2026-05-04T12:00:00Z", input = 1_000_000),
@@ -56,7 +53,7 @@ class UsageAggregatorTest {
             entry("2026-06-01T00:00:00Z", input = 99_999_999),
         )
 
-        val result = aggregator.aggregateMonth(entries, month, utc)
+        val result = aggregator.aggregateMonth(entries, month, utc, pricing)
 
         assertNotNull(result)
         assertEquals(3_000_000L, result.total?.inputTokens ?: 0L)
@@ -65,7 +62,7 @@ class UsageAggregatorTest {
     }
 
     @Test
-    fun costIncludesBothCache5mAnd1hWrites() = runBlocking {
+    fun costIncludesBothCache5mAnd1hWrites() {
         val day = LocalDate(2026, 5, 4)
         val entry = UsageEntry(
             timestamp = Instant.parse("2026-05-04T12:00:00Z"),
@@ -77,19 +74,30 @@ class UsageAggregatorTest {
             cacheCreation1hTokens = 1_000_000,
         )
 
-        val result = aggregator.aggregateDay(listOf(entry), day, utc)
+        val result = aggregator.aggregateDay(listOf(entry), day, utc, pricing)
 
         // 1M * $6.25 + 1M * $10 = $16.25
         assertCloseTo(16.25, result.total?.cost ?: 0.0)
     }
 
     @Test
-    fun emptyEntriesProduceZeroTotals() = runBlocking {
+    fun emptyEntriesProduceZeroTotals() {
         val day = LocalDate(2026, 5, 4)
-        val result = aggregator.aggregateDay(emptyList(), day, utc)
+        val result = aggregator.aggregateDay(emptyList(), day, utc, pricing)
         assertEquals(0L, result.total?.inputTokens ?: 0L)
         assertCloseTo(0.0, result.total?.cost ?: 0.0)
         assertEquals(0, result.byModel.size)
+    }
+
+    @Test
+    fun unknownModelContributesZeroCost() {
+        val day = LocalDate(2026, 5, 4)
+        val entry = entry("2026-05-04T12:00:00Z", input = 1_000_000, model = "some-unlisted-model")
+
+        val result = aggregator.aggregateDay(listOf(entry), day, utc, pricing)
+
+        assertEquals(1_000_000L, result.total?.inputTokens ?: 0L)
+        assertCloseTo(0.0, result.total?.cost ?: 0.0)
     }
 
     private fun entry(timestamp: String, input: Long = 0, output: Long = 0, model: String = "claude-opus-4-7") =

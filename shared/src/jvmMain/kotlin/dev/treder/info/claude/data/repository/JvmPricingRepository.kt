@@ -1,49 +1,69 @@
 package dev.treder.info.claude.data.repository
 
 import dev.treder.info.claude.data.pricing.LiteLlmPricingApi
-import dev.treder.info.claude.data.pricing.PricingDefaults
-import dev.treder.info.claude.domain.model.ModelPricing
+import dev.treder.info.claude.data.pricing.PricingApi
+import dev.treder.info.claude.domain.model.PricingState
+import dev.treder.info.claude.domain.model.PricingTable
 import dev.treder.info.claude.domain.repository.PricingRepository
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
+/**
+ * Keeps a live [PricingTable] by fetching from [api] on start and every
+ * [refreshInterval] thereafter. The contract: a fetch failure never throws away
+ * a table we already have — the previous successful fetch stays in place. Only a
+ * failed *first* fetch (nothing to fall back to) surfaces as [PricingState.Failed].
+ *
+ * The refresh loop runs for the lifetime of [scope]; a [refresh] call wakes it
+ * early without disturbing the periodic cadence.
+ */
 class JvmPricingRepository(
-    private val api: LiteLlmPricingApi = LiteLlmPricingApi(),
+    private val api: PricingApi = LiteLlmPricingApi(),
+    scope: CoroutineScope,
+    private val refreshInterval: Duration = 60.minutes,
 ) : PricingRepository {
 
-    private val mutex = Mutex()
+    private val _state = MutableStateFlow<PricingState>(PricingState.Loading)
+    override val state: StateFlow<PricingState> = _state.asStateFlow()
 
-    @Volatile
-    private var remote: Map<String, ModelPricing>? = null
+    // Conflated: a burst of retry taps collapses into a single pending wake-up.
+    private val refreshSignal = Channel<Unit>(Channel.CONFLATED)
 
-    @Volatile
-    private var attempted: Boolean = false
-
-    override suspend fun pricingFor(model: String): ModelPricing {
-        val map = ensureLoaded()
-        map[model]?.let { return it }
-        val stripped = stripDateSuffix(model)
-        if (stripped != model) {
-            map[stripped]?.let { return it }
-        }
-        // litellm sometimes uses "anthropic/claude-..." prefix
-        map["anthropic/$model"]?.let { return it }
-        map["anthropic/$stripped"]?.let { return it }
-        return PricingDefaults.forModel(model)
-    }
-
-    private suspend fun ensureLoaded(): Map<String, ModelPricing> {
-        remote?.let { return it }
-        if (attempted) return emptyMap()
-        return mutex.withLock {
-            remote?.let { return@withLock it }
-            attempted = true
-            val loaded = runCatching { api.fetch() }.getOrElse { emptyMap() }
-            remote = loaded
-            loaded
+    init {
+        scope.launch {
+            while (isActive) {
+                loadOnce()
+                // Sleep until the next interval, or until a manual refresh wakes us.
+                withTimeoutOrNull(refreshInterval) { refreshSignal.receive() }
+            }
         }
     }
 
-    private fun stripDateSuffix(model: String): String =
-        model.replace(Regex("-\\d{8}$"), "")
+    override fun refresh() {
+        refreshSignal.trySend(Unit)
+    }
+
+    private suspend fun loadOnce() {
+        runCatching {
+            val raw = api.fetch()
+            check(raw.isNotEmpty()) { "pricing feed returned no usable entries" }
+            PricingTable(raw)
+        }.onSuccess { table ->
+            _state.value = PricingState.Ready(table)
+        }.onFailure {
+            // Fall back to the previous fetch: only report failure when we have
+            // never had a table to show.
+            if (_state.value !is PricingState.Ready) {
+                _state.value = PricingState.Failed
+            }
+        }
+    }
 }

@@ -6,7 +6,7 @@ Kleines Tray-Tool, das zeigt, wie viele Tokens Claude Code gerade verbraucht hat
 
 - Zwei Sektionen: aktueller Tag und die letzten drei Monate. Jeweils mit Token-Aufschlüsselung (Input, Output, Cache Write 5 min + 1 h, Cache Read) und ungefähren USD-Kosten.
 - Hover über die Summe (bei „Heute" oder einem Monat) zeigt ein Tooltip mit der Kostenaufschlüsselung pro Modell — Kosten und Anteil je Modell.
-- Preise zieht die App live von [LiteLLM](https://github.com/BerriAI/litellm). Falls kein Netz da ist oder ein Modell fehlt, gibt's eine hartkodierte Fallback-Tabelle für Opus 4.7, Sonnet 4.6 und Haiku 4.5.
+- Preise zieht die App live von [LiteLLM](https://github.com/BerriAI/litellm) — einmal beim Start und danach alle 60 Minuten. Schlägt eine Aktualisierung fehl, bleiben die zuletzt erfolgreich geladenen Preise in Kraft. Klappt schon der allererste Abruf nicht, zeigt das Popup statt der Auswertung einen Hinweis mit „Erneut versuchen"-Button; bis die ersten Preise da sind, läuft ein Spinner.
 - Update-Intervall ist 10 Sekunden. Pro JSONL-Datei wird nur das neue Tail-Stück geparst — das bleibt auch bei vielen Sessions schnell.
 - Linksklick aufs Tray-Icon öffnet Popup direkt neben dem Klick, mit nativem Blur-Hintergrund (Acrylic auf Windows 10/11, NSVisualEffectView-Vibrancy auf macOS, halbtransparenter Compose-Fallback unter Linux). X schließt das Fenster, App läuft im Tray weiter. Rechtsklick bietet die möglichkeit zum beenden.
 - Liest ausschließlich lokal aus `~/.claude/projects/**/*.jsonl`. Keine Anthropic-Calls, kein API-Key, nichts geht raus.
@@ -73,8 +73,8 @@ Kotlin mit Compose Multiplatform (JVM-Target, kein Android/iOS) und Material 3. 
 Clean Architecture, MVVM, Repository Pattern.
 
 ```
-shared/commonMain/    domain (Models, Repository-Interfaces) · data/aggregation · data/pricing (Defaults) · presentation (ViewModel, Compose-UI)
-shared/jvmMain/       ClaudeInfoApp (manuelle DI) · JSONL-Parser & Tail-Cache · Ktor-Pricing-API · settings.json-Reader
+shared/commonMain/    domain (Models inkl. PricingTable/PricingState, Repository-Interfaces) · data/aggregation (reiner Aggregator) · presentation (ViewModel, Compose-UI)
+shared/jvmMain/       ClaudeInfoApp (manuelle DI) · JSONL-Parser & Tail-Cache · Pricing-Fetch (Ktor) + Refresh-Loop · settings.json-Reader
 desktopApp/           main.kt (Window-Setup, Focus-Loss) · backdrop/ (Windows / macOS / Linux-Fallback) · tray/ (SystemTray + AWT-Menu)
 ```
 
@@ -82,7 +82,7 @@ desktopApp/           main.kt (Window-Setup, Focus-Loss) · backdrop/ (Windows /
 
 ### Datenquelle
 
-Quelle sind die `~/.claude/projects/**/*.jsonl`-Dateien. Pro Zeile zählen nur abgeschlossene Assistant-Antworten, also `type == "assistant"` mit gesetztem `message.stop_reason`. Streaming-Zwischenstände werden ignoriert, sonst würde doppelt gezählt. Modellpreise lädt die App lazy beim Start von LiteLLM und hält sie im Speicher; bei fehlender Netzwerkverbindung oder unbekannten Modellen springt die hartkodierte Fallback-Tabelle ein.
+Quelle sind die `~/.claude/projects/**/*.jsonl`-Dateien. Pro Zeile zählen nur abgeschlossene Assistant-Antworten, also `type == "assistant"` mit gesetztem `message.stop_reason`. Streaming-Zwischenstände werden ignoriert, sonst würde doppelt gezählt. Modellpreise holt die App beim Start und danach alle 60 Minuten von LiteLLM und hält sie im Speicher. Schlägt eine Aktualisierung fehl, gelten weiter die zuletzt erfolgreich geladenen Preise; für Modelle, die der Feed nicht kennt, wird mit 0 $ gerechnet (Tokens werden trotzdem gezählt).
 
 ## Credits
 

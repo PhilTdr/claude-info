@@ -20,6 +20,50 @@ internal fun formatUsd(amount: Double): String {
     return "$$whole.$fractional"
 }
 
+/**
+ * Turns a raw model id into a short, human-readable name without hardcoding any
+ * model family: the alphabetic tokens become the (capitalized) name, the numeric
+ * tokens become a dotted version, and a trailing date stamp is dropped. So future
+ * models work too, no code change needed.
+ *
+ *   "claude-opus-4-7"            -> "Opus 4.7"
+ *   "claude-haiku-4-5-20251001"  -> "Haiku 4.5"
+ *   "claude-3-5-sonnet-20241022" -> "Sonnet 3.5"
+ *   "<synthetic>"                -> "Synthetic"
+ */
+internal fun formatModelName(model: String?): String {
+    val raw = model?.trim()?.trim('<', '>')
+    if (raw.isNullOrBlank()) return "Unbekannt"
+
+    val tokens = raw.removePrefix("claude-").split('-', '.').filter { it.isNotBlank() }
+    val nameParts = mutableListOf<String>()
+    val versionParts = mutableListOf<String>()
+    for (token in tokens) {
+        val numeric = token.all { it.isDigit() }
+        when {
+            numeric && token.length >= 6 -> {} // date stamp (e.g. 20251001) -> drop
+            numeric -> versionParts += token
+            else -> nameParts += token.replaceFirstChar { it.uppercase() }
+        }
+    }
+
+    val name = nameParts.joinToString(" ")
+    val version = versionParts.joinToString(".")
+    return when {
+        name.isNotBlank() && version.isNotBlank() -> "$name $version"
+        name.isNotBlank() -> name
+        version.isNotBlank() -> version
+        else -> raw
+    }
+}
+
+/** Formats a 0..1 share as a rounded percentage, e.g. 0.84 -> "84 %". */
+internal fun formatPercent(fraction: Double): String {
+    if (fraction.isNaN() || fraction <= 0.0) return "0 %"
+    val percent = (fraction * 100.0).roundToLong()
+    return if (percent <= 0L) "<1 %" else "$percent %"
+}
+
 private fun formatDecimal(value: Double, digits: Int): String {
     val factor = when (digits) {
         0 -> 1L

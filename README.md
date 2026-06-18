@@ -5,6 +5,7 @@ Kleines Tray-Tool, das zeigt, wie viele Tokens Claude Code gerade verbraucht hat
 ## Was drin ist
 
 - Zwei Sektionen: aktueller Tag und die letzten drei Monate. Jeweils mit Token-Aufschlüsselung (Input, Output, Cache Write 5 min + 1 h, Cache Read) und ungefähren USD-Kosten.
+- Hover über die Summe (bei „Heute" oder einem Monat) zeigt ein Tooltip mit der Kostenaufschlüsselung pro Modell — Kosten und Anteil je Modell.
 - Preise zieht die App live von [LiteLLM](https://github.com/BerriAI/litellm). Falls kein Netz da ist oder ein Modell fehlt, gibt's eine hartkodierte Fallback-Tabelle für Opus 4.7, Sonnet 4.6 und Haiku 4.5.
 - Update-Intervall ist 10 Sekunden. Pro JSONL-Datei wird nur das neue Tail-Stück geparst — das bleibt auch bei vielen Sessions schnell.
 - Linksklick aufs Tray-Icon öffnet Popup direkt neben dem Klick, mit nativem Blur-Hintergrund (Acrylic auf Windows 10/11, NSVisualEffectView-Vibrancy auf macOS, halbtransparenter Compose-Fallback unter Linux). X schließt das Fenster, App läuft im Tray weiter. Rechtsklick bietet die möglichkeit zum beenden.

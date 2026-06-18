@@ -86,7 +86,10 @@ fun UsageDashboard(
                     )
                 }
                 else -> {
-                    history.forEach { month ->
+                    history.forEachIndexed { index, month ->
+                        if (index > 0) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                        }
                         PeriodSection(
                             title = formatMonth(month),
                             period = month,

@@ -72,6 +72,8 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASS" "$KEYCHAIN"
           rm "$RUNNER_TEMP/cert.p12"
           echo "MAC_SIGNED=1" >> "$GITHUB_ENV"
+          echo "MAC_SIGN_IDENTITY=treder.dev Apps" >> "$GITHUB_ENV"
+          echo "MAC_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
       - name: Import Windows signing PFX
         if: runner.os == 'Windows' && env.WIN_SIGN_PFX_BASE64 != ''
@@ -132,8 +134,20 @@ jobs:
             exit 1
           fi
           codesign --verify --deep --strict --verbose=2 "$APP"
-          codesign -dvv "$APP" 2>&1 | grep -E "Authority|Identifier" || true
-          echo "OK: App-Bundle ist gültig signiert."
+          INFO="$(codesign -dvv "$APP" 2>&1)"
+          echo "$INFO" | grep -E "Authority|Identifier|Signature" || true
+          # Ad-hoc-Signaturen verifizieren erfolgreich, tragen aber NICHT unsere
+          # Identität. Auf Apple Silicon signiert die Toolchain automatisch ad-hoc,
+          # daher hier explizit auf die echte Signing-Identity prüfen.
+          if echo "$INFO" | grep -q "Signature=adhoc"; then
+            echo "FEHLER: App ist nur ad-hoc signiert (Identität fehlt)." >&2
+            exit 1
+          fi
+          if ! echo "$INFO" | grep -q "Authority=${MAC_SIGN_IDENTITY:-treder.dev Apps}"; then
+            echo "FEHLER: Erwartete Signing-Identity nicht gefunden." >&2
+            exit 1
+          fi
+          echo "OK: App-Bundle ist mit der erwarteten Identität signiert."
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

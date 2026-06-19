@@ -74,27 +74,37 @@ compose.desktop {
 val macSignIdentity = "treder.dev Apps"
 
 val signMacApp by tasks.registering(Exec::class) {
-    val identity = macSignIdentity
     group = "distribution"
     description = "Signiert die .app mit dem internen Self-Signed Cert."
     dependsOn("createDistributable")
-    onlyIf {
-        if (!OperatingSystem.current().isMacOsX) return@onlyIf false
-        val proc = ProcessBuilder("/usr/bin/security", "find-identity", "-v", "-p", "codesigning")
-            .redirectErrorStream(true).start()
-        val output = proc.inputStream.bufferedReader().readText()
-        proc.waitFor()
-        identity in output
-    }
+
     val appDir = layout.buildDirectory.dir("compose/binaries/main/app/ClaudeInfo.app")
     inputs.dir(appDir)
+
+    // Signieren wird über MAC_SIGN_IDENTITY gesteuert (in CI gesetzt, sobald der
+    // Import des Zertifikats geklappt hat). Kein find-identity-Probe mehr: dieser
+    // war strenger als codesign selbst und hat den Task fälschlich übersprungen.
+    // Env config-cache-sicher über providers lesen, commandLine zur Konfigurations-
+    // zeit bauen (kein doFirst -> keine Script-Referenz im serialisierten Task).
+    val identity = providers.environmentVariable("MAC_SIGN_IDENTITY")
+    val keychain = providers.environmentVariable("MAC_KEYCHAIN")
+
+    onlyIf {
+        OperatingSystem.current().isMacOsX && identity.isPresent
+    }
+
     commandLine(
-        "codesign",
-        "--force", "--deep",
-        "--options", "runtime",
-        "--timestamp",
-        "--sign", identity,
-        appDir.get().asFile.absolutePath
+        buildList {
+            add("codesign")
+            add("--force"); add("--deep")
+            add("--options"); add("runtime")
+            add("--timestamp")
+            // codesign direkt auf den importierten Keychain zeigen lassen,
+            // statt von der Keychain-Suchliste/Trust-Policy abzuhängen.
+            keychain.orNull?.let { add("--keychain"); add(it) }
+            add("--sign"); add(identity.getOrElse(macSignIdentity))
+            add(appDir.get().asFile.absolutePath)
+        }
     )
 }
 

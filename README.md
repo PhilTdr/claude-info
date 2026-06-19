@@ -1,88 +1,75 @@
 # Claude Info
 
-Kleines Tray-Tool, das zeigt, wie viele Tokens Claude Code gerade verbraucht hat und was das ungefähr kostet. Läuft im Hintergrund, ohne dauerhaftes Fenster.
+Small tray tool that shows how many tokens Claude Code has used and what that would have cost in API usage.
 
-## Was drin ist
+<img src="docs/screenshot.png" alt="Claude Info Screenshot" style="max-width: 350px;">
 
-- Zwei Sektionen: aktueller Tag und die letzten drei Monate. Jeweils mit Token-Aufschlüsselung (Input, Output, Cache Write 5 min + 1 h, Cache Read) und ungefähren USD-Kosten.
-- Hover über die Summe (bei „Heute" oder einem Monat) zeigt ein Tooltip mit der Kostenaufschlüsselung pro Modell — Kosten und Anteil je Modell.
-- Preise zieht die App live von [LiteLLM](https://github.com/BerriAI/litellm) — einmal beim Start und danach alle 60 Minuten. Schlägt eine Aktualisierung fehl, bleiben die zuletzt erfolgreich geladenen Preise in Kraft. Klappt schon der allererste Abruf nicht, zeigt das Popup statt der Auswertung einen Hinweis mit „Erneut versuchen"-Button; bis die ersten Preise da sind, läuft ein Spinner.
-- Update-Intervall ist 10 Sekunden. Pro JSONL-Datei wird nur das neue Tail-Stück geparst — das bleibt auch bei vielen Sessions schnell.
-- Linksklick aufs Tray-Icon öffnet Popup direkt neben dem Klick, mit nativem Blur-Hintergrund (Acrylic auf Windows 10/11, NSVisualEffectView-Vibrancy auf macOS, halbtransparenter Compose-Fallback unter Linux). X schließt das Fenster, App läuft im Tray weiter. Rechtsklick bietet die möglichkeit zum beenden.
-- Liest ausschließlich lokal aus `~/.claude/projects/**/*.jsonl`. Keine Anthropic-Calls, kein API-Key, nichts geht raus.
+## What's inside
+
+- Usage: current day and the last three months. Each with a token breakdown (input, output, cache write 5 min + 1 h, cache read) and approximate USD costs.
+- Hovering over the total shows a tooltip with the per-model cost breakdown.
+- Prices are fetched from [LiteLLM](https://github.com/BerriAI/litellm).
+- Usage updates continuously in the UI.
+  - Token usage is read from the JSONL file every 10s. (Only the new tail segment is parsed, so it stays performant even with many sessions.)
+  - Prices are fetched from the LiteLLM API every 60 min.
+- Left-clicking the tray icon opens the UI in a popup with a native blur backdrop (Acrylic on Windows 10/11, NSVisualEffectView vibrancy on macOS, semi-transparent Compose fallback on Linux). X closes the window, the app keeps running in the tray. Right-click offers the option to quit.
+- Reads usage data exclusively from local `~/.claude/projects/**/*.jsonl`. No Anthropic API calls, no API key.
 
 ## Installation
 
-Fertige Installer gibt's auf der [Releases-Seite](https://github.com/PhilTdr/claude-info/releases):
+Ready-made installers are available on the [releases page](https://github.com/PhilTdr/claude-info/releases):
 
-| Plattform | Datei |
+| Platform | File |
 |-----------|-------|
 | Windows   | `ClaudeInfo-*.msi` |
 | macOS (Apple Silicon) | `ClaudeInfo-*-arm64.dmg` |
 | macOS (Intel) | `ClaudeInfo-*-x64.dmg` |
 | Linux (Debian/Ubuntu) | `claude-info_*.deb` |
 
-### Erststart
+### First launch
 
-- **Windows**: SmartScreen-Popup → „Weitere Informationen" → „Trotzdem ausführen". Im Installer-Dialog steht `treder.dev Apps` als Aussteller.
-- **macOS**: Doppelklick blockt. Rechtsklick auf die `.app` → „Öffnen" → noch mal „Öffnen". macOS merkt sich das pro Maschine.
-- **Linux**: `sudo dpkg -i claude-info_*.deb` (oder Paketmanager der Wahl). Ob das Tray-Icon dann tatsächlich auftaucht, hängt von der Desktop-Umgebung ab.
+- **Windows**: SmartScreen popup → "More info" → "Run anyway". The installer dialog lists `treder.dev Apps` as the publisher.
+- **macOS**: A double-click is blocked. Right-click the `.app` → "Open" → "Open" again. macOS remembers this per machine.
+- **Linux**: `sudo dpkg -i claude-info_*.deb`. Whether the tray icon actually shows up depends on the desktop environment.
 
-### Build verifizieren (optional)
+## For developers
 
-```bash
-# Signatur prüfen — Aussteller muss "treder.dev Apps" sein
-codesign -dvv ClaudeInfo.app                       # macOS
-Get-AuthenticodeSignature .\ClaudeInfo-*.msi       # Windows (PowerShell)
-
-# SHA-256 abgleichen
-shasum -a 256 -c SHA256SUMS.txt                    # macOS / Linux
-Get-FileHash .\ClaudeInfo-*.msi -Algorithm SHA256  # Windows (PowerShell)
-```
-
-### Plattform-Support
-
-| OS      | Tray-Icon     | Popup | AWT-Menu |
-|---------|---------------|-------|----------|
-| Windows | ✓             | ✓     | ✓        |
-| macOS   | ✓             | ✓     | ✓        |
-| Linux   | (DE-abhängig) | ✓     | ✓        |
-
-Unter Linux ist `java.awt.SystemTray` einfach so wie es ist — GNOME ohne passende Extension zeigt das Icon z.B. gar nicht. Wenn die Tray-Registrierung scheitert, öffnet die App das Popup einmal direkt; danach ist sie über Schließen + Re-Start nutzbar, aber halt nicht mehr als langlebiges Tray-Programm gedacht.
-
-## Für Entwickler
-
-Du brauchst JDK 17+ mit gesetztem `JAVA_HOME`. CI läuft mit JDK 21.
+You need JDK 17+ with `JAVA_HOME` set. CI runs on JDK 21.
 
 ```bash
-./gradlew :desktopApp:hotRun --auto                    # Hot-Reload-Entwicklung
-./gradlew :desktopApp:run                              # Normaler Start
+./gradlew :desktopApp:hotRun --auto                    # Hot-reload development
+./gradlew :desktopApp:run                              # Normal start
 ./gradlew :shared:jvmTest                              # Tests
 ./gradlew :desktopApp:packageDistributionForCurrentOS  # Distribution (DMG / MSI / DEB)
 ```
 
-### Tech Stack
+### Tech stack
 
-Kotlin mit Compose Multiplatform (JVM-Target, kein Android/iOS) und Material 3. Ktor (CIO) für den LiteLLM-Pricing-Fetch, kotlinx-serialization / -datetime fürs Datums- und JSON-Handling. Tray-Integration über `java.awt.SystemTray` + `PopupMenu`. Für die nativen Blur-Backdrops kommt JNA zum Einsatz: unter Windows wird `user32!SetWindowCompositionAttribute` aufgerufen, unter macOS wird eine `NSVisualEffectView` gewrappt und via Skiko-Reflection die Metal-Clear-Color transparent gesetzt. Signiert wird in der CI mit jsign (Windows) und `codesign` (macOS).
+Kotlin with Compose Multiplatform (JVM target for desktop)
+Material 3
+Ktor (CIO) for the LiteLLM pricing fetch
+kotlinx-serialization / -datetime for date and JSON handling
+Tray integration via `java.awt.SystemTray` + `PopupMenu`
+The native blur backdrops use JNA: on Windows `user32!SetWindowCompositionAttribute` is called, on macOS an `NSVisualEffectView` is wrapped and the Metal clear color is made transparent via Skiko reflection. Signing happens in CI with jsign (Windows) and `codesign` (macOS).
 
-### Architektur
+### Architecture
 
 Clean Architecture, MVVM, Repository Pattern.
 
 ```
-shared/commonMain/    domain (Models inkl. PricingTable/PricingState, Repository-Interfaces) · data/aggregation (reiner Aggregator) · presentation (ViewModel, Compose-UI)
-shared/jvmMain/       ClaudeInfoApp (manuelle DI) · JSONL-Parser & Tail-Cache · Pricing-Fetch (Ktor) + Refresh-Loop · settings.json-Reader
-desktopApp/           main.kt (Window-Setup, Focus-Loss) · backdrop/ (Windows / macOS / Linux-Fallback) · tray/ (SystemTray + AWT-Menu)
+shared/commonMain/      domain (models, repository interfaces)
+                        data/aggregation (pure aggregator)
+                        presentation (ViewModel, Compose UI)
+shared/jvmMain/         ClaudeInfoApp (manual DI)
+                        JSONL parser & tail cache
+                        pricing fetch (Ktor) + refresh loop
+                        settings.json reader
+desktopApp/             main.kt (window setup, focus loss)
+                        backdrop/ (Windows / macOS / Linux fallback)
+                        tray/ (SystemTray + AWT menu)
 ```
 
-`UsageRepository` exponiert drei Flows (`getTodayUsage`, `getMonthUsage`, `getHistoryUsage`), die alle aus einer gemeinsamen `shareIn`-Quelle gespeist werden. Heißt: pro 10-Sekunden-Tick gibt es genau einen Filesystem-Scan und einen Parser-Pass — nicht drei.
+### Data source
 
-### Datenquelle
-
-Quelle sind die `~/.claude/projects/**/*.jsonl`-Dateien. Pro Zeile zählen nur abgeschlossene Assistant-Antworten, also `type == "assistant"` mit gesetztem `message.stop_reason`. Streaming-Zwischenstände werden ignoriert, sonst würde doppelt gezählt. Modellpreise holt die App beim Start und danach alle 60 Minuten von LiteLLM und hält sie im Speicher. Schlägt eine Aktualisierung fehl, gelten weiter die zuletzt erfolgreich geladenen Preise; für Modelle, die der Feed nicht kennt, wird mit 0 $ gerechnet (Tokens werden trotzdem gezählt).
-
-## Credits
-
-Inspiration und Vorbild: [`ccusage`](https://github.com/ryoppippi/ccusage).
-Preisdaten: [LiteLLM](https://github.com/BerriAI/litellm).
-
+Token usage: the source is the `~/.claude/projects/**/*.jsonl` files. Per line, only completed assistant responses count, i.e. `type == "assistant"` with `message.stop_reason` set. Streaming intermediates are ignored, otherwise they would be counted twice.
+Model prices: the source is [LiteLLM](https://github.com/BerriAI/litellm).

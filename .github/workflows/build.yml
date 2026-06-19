@@ -14,8 +14,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     strategy:
       matrix:
         include:
@@ -73,6 +71,7 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASS" "$KEYCHAIN"
           rm "$RUNNER_TEMP/cert.p12"
+          echo "MAC_SIGNED=1" >> "$GITHUB_ENV"
 
       - name: Import Windows signing PFX
         if: runner.os == 'Windows' && env.WIN_SIGN_PFX_BASE64 != ''
@@ -101,6 +100,41 @@ jobs:
             mv "$file" "${{ matrix.artifact-path }}${name}${{ matrix.arch-suffix }}.${extension}"
           done
 
+      - name: Verify Windows signature
+        if: runner.os == 'Windows' && env.WIN_SIGN_PFX_PATH != ''
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msis = Get-ChildItem -Path "${{ matrix.artifact-path }}" -Filter *.msi
+          if (-not $msis) { throw "Keine MSI zum Verifizieren gefunden." }
+          foreach ($msi in $msis) {
+            $sig = Get-AuthenticodeSignature $msi.FullName
+            Write-Host "$($msi.Name): Status=$($sig.Status); Signer=$($sig.SignerCertificate.Subject)"
+            if ($sig.Status -eq 'NotSigned' -or -not $sig.SignerCertificate) {
+              throw "$($msi.Name) ist NICHT signiert."
+            }
+            if ($sig.Status -eq 'HashMismatch') {
+              throw "$($msi.Name): Signatur ungültig (HashMismatch)."
+            }
+            if (-not $sig.TimeStamperCertificate) {
+              Write-Warning "$($msi.Name): kein Timestamp gefunden."
+            }
+          }
+          Write-Host "OK: alle MSI-Artefakte sind signiert."
+
+      - name: Verify macOS signature
+        if: runner.os == 'macOS' && env.MAC_SIGNED == '1'
+        run: |
+          set -euo pipefail
+          APP="desktopApp/build/compose/binaries/main/app/ClaudeInfo.app"
+          if [ ! -d "$APP" ]; then
+            echo "App-Bundle nicht gefunden: $APP" >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dvv "$APP" 2>&1 | grep -E "Authority|Identifier" || true
+          echo "OK: App-Bundle ist gültig signiert."
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -124,8 +158,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
-      attestations: write
     steps:
       - name: Download Artifacts
         uses: actions/download-artifact@v4
@@ -141,14 +173,6 @@ jobs:
       - name: Generate SHA-256 sums
         working-directory: release
         run: sha256sum *.msi *.dmg *.deb > SHA256SUMS.txt
-
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: |
-            release/*.msi
-            release/*.dmg
-            release/*.deb
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

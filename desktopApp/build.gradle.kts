@@ -71,7 +71,7 @@ compose.desktop {
     }
 }
 
-val macSignIdentity = "ClaudeInfo Internal Build"
+val macSignIdentity = "treder.dev Apps"
 
 val signMacApp by tasks.registering(Exec::class) {
     val identity = macSignIdentity
@@ -135,7 +135,7 @@ abstract class SignMsiTask @Inject constructor(
                     "--storetype", "PKCS12",
                     "--alg", "SHA-256",
                     "--tsaurl", "http://timestamp.digicert.com",
-                    "--name", "ClaudeInfo (Internal Build)",
+                    "--name", "treder.dev Apps",
                     "--url", "https://github.com/PhilTdr/claude-info",
                     msi.absolutePath
                 )

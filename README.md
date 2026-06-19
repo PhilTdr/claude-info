@@ -24,23 +24,20 @@ Fertige Installer gibt's auf der [Releases-Seite](https://github.com/PhilTdr/cla
 
 ### Erststart
 
-- **Windows**: SmartScreen-Popup → „Weitere Informationen" → „Trotzdem ausführen". Im Installer-Dialog steht `ClaudeInfo Build` als Aussteller.
+- **Windows**: SmartScreen-Popup → „Weitere Informationen" → „Trotzdem ausführen". Im Installer-Dialog steht `treder.dev Apps` als Aussteller.
 - **macOS**: Doppelklick blockt. Rechtsklick auf die `.app` → „Öffnen" → noch mal „Öffnen". macOS merkt sich das pro Maschine.
 - **Linux**: `sudo dpkg -i claude-info_*.deb` (oder Paketmanager der Wahl). Ob das Tray-Icon dann tatsächlich auftaucht, hängt von der Desktop-Umgebung ab.
 
 ### Build verifizieren (optional)
 
 ```bash
-# Signatur prüfen — Aussteller muss "ClaudeInfo Build" sein
+# Signatur prüfen — Aussteller muss "treder.dev Apps" sein
 codesign -dvv ClaudeInfo.app                       # macOS
 Get-AuthenticodeSignature .\ClaudeInfo-*.msi       # Windows (PowerShell)
 
 # SHA-256 abgleichen
 shasum -a 256 -c SHA256SUMS.txt                    # macOS / Linux
 Get-FileHash .\ClaudeInfo-*.msi -Algorithm SHA256  # Windows (PowerShell)
-
-# Build-Provenance über Sigstore (GitHub Artifact Attestations)
-gh attestation verify <file> --repo PhilTdr/claude-info
 ```
 
 ### Plattform-Support

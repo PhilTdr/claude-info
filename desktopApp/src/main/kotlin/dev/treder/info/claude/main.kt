@@ -6,6 +6,7 @@ import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
@@ -17,12 +18,15 @@ import dev.treder.info.claude.presentation.ui.UsageDashboard
 import dev.treder.info.claude.resources.Res
 import dev.treder.info.claude.resources.icon
 import dev.treder.info.claude.tray.TrayController
+import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.painterResource
 import java.awt.GraphicsConfiguration
+import java.awt.GraphicsDevice
 import java.awt.GraphicsEnvironment
 import java.awt.Toolkit
 import javax.swing.SwingUtilities
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 private const val POPUP_WIDTH_DP = 380
 private const val INITIAL_HEIGHT_DP = 200
@@ -34,6 +38,13 @@ fun main() = application(exitProcessOnExit = true) {
 
     var popupVisible by remember { mutableStateOf(false) }
     var trayClick by remember { mutableStateOf<IntOffset?>(null) }
+    // Bumped to force Compose to recreate the native window. A window built before a
+    // monitor-configuration change (dock/undock) keeps a stale rendering density and
+    // ends up clipped; only a fresh window (like an app restart) renders correctly.
+    var windowGeneration by remember { mutableStateOf(0) }
+    // Snapshot of the screen layout the current window was built for; if it differs at
+    // open time, the monitors changed and the window must be rebuilt.
+    var builtScreenSignature by remember { mutableStateOf("") }
     val composeWindowRef = remember { mutableStateOf<ComposeWindow?>(null) }
     val windowState = rememberWindowState(
         size = DpSize(POPUP_WIDTH_DP.dp, INITIAL_HEIGHT_DP.dp),
@@ -45,9 +56,28 @@ fun main() = application(exitProcessOnExit = true) {
             onLeftClick = { x, y ->
                 val click = IntOffset(x, y)
                 trayClick = click
-                popupVisible = !popupVisible
+                if (popupVisible) {
+                    popupVisible = false
+                } else {
+                    // If the monitor configuration changed since the window was built
+                    // (dock/undock, scaling change), rebuild it fresh so it renders at
+                    // the current scale. The content-driven self-healing size and the
+                    // target-size anchoring make the freshly built window settle to the
+                    // right size and position, so we can open it in the same click.
+                    val changed = composeWindowRef.value != null &&
+                        screenConfigSignature() != builtScreenSignature
+                    if (changed) {
+                        windowState.size = DpSize(POPUP_WIDTH_DP.dp, INITIAL_HEIGHT_DP.dp)
+                        windowGeneration++
+                    }
+                    popupVisible = true
+                }
                 composeWindowRef.value?.let {
-                    setWindowPosition(click, it)
+                    setWindowPosition(
+                        click, it,
+                        windowState.size.width.value.roundToInt(),
+                        windowState.size.height.value.roundToInt(),
+                    )
                 }
             },
             onQuit = {
@@ -64,64 +94,103 @@ fun main() = application(exitProcessOnExit = true) {
         onDispose { controller.uninstall() }
     }
 
-    Window(
-        icon = painterResource(Res.drawable.icon),
-        onCloseRequest = { popupVisible = false },
-        visible = popupVisible,
-        state = windowState,
-        title = "Claude Info",
-        undecorated = true,
-        transparent = true,
-        alwaysOnTop = true,
-        resizable = false,
-        focusable = true,
-    ) {
-        val density = LocalDensity.current
-        val currentWindow = window
-
-        DisposableEffect(currentWindow) {
-            composeWindowRef.value = currentWindow
-            Backdrop.apply(currentWindow)
-            onDispose {
-                if (composeWindowRef.value === currentWindow) composeWindowRef.value = null
+    // Watch for monitor-configuration changes (dock/undock, rescale) even while the
+    // popup is hidden. When the layout differs from what the current window was built
+    // for, rebuild the window ahead of time so the next open shows a fresh, correctly
+    // rendered window (a stale window renders clipped and only a rebuild — like an app
+    // restart — fixes it). Polling because AWT exposes no public display-change event.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1500)
+            if (composeWindowRef.value != null && screenConfigSignature() != builtScreenSignature) {
+                // Close the popup so the window is rebuilt while hidden and re-anchors
+                // cleanly on the next open. Reopening a window across a screen change
+                // leaves it mis-positioned, so we don't try to keep it visible.
+                popupVisible = false
+                windowState.size = DpSize(POPUP_WIDTH_DP.dp, INITIAL_HEIGHT_DP.dp)
+                windowGeneration++
             }
         }
+    }
 
-        // Re-anchor after the window becomes visible or its content-driven size changes.
-        // Re-apply the backdrop on each show: hiding a layered window on Windows
-        // drops the composition attribute, so the blur would otherwise be lost.
-        LaunchedEffect(popupVisible, windowState.size) {
-            val click = trayClick
-            val window = composeWindowRef.value
-            if (popupVisible && click != null && window != null) {
-                setWindowPosition(click, window)
-                Backdrop.apply(window)
+    // Keyed on windowGeneration so a monitor-configuration change recreates the
+    // native window: a fresh peer renders at the current scale, which a merely
+    // hidden/shown window never re-reads (the source of the clipped popup).
+    key(windowGeneration) {
+        Window(
+            icon = painterResource(Res.drawable.icon),
+            onCloseRequest = { popupVisible = false },
+            visible = popupVisible,
+            state = windowState,
+            title = "Claude Info",
+            undecorated = true,
+            transparent = true,
+            alwaysOnTop = true,
+            resizable = false,
+            focusable = true,
+        ) {
+            val density = LocalDensity.current
+            val currentWindow = window
+            var lastContentPx by remember { mutableStateOf(IntSize.Zero) }
+
+            DisposableEffect(currentWindow) {
+                composeWindowRef.value = currentWindow
+                builtScreenSignature = screenConfigSignature()
+                Backdrop.apply(currentWindow)
+                onDispose {
+                    if (composeWindowRef.value === currentWindow) composeWindowRef.value = null
+                }
             }
-        }
 
-        ClaudeInfoTheme {
-            UsageDashboard(
-                viewModel = viewModel,
-                backgroundColor = Backdrop.surfaceTint(),
-                onContentSizeChanged = { intSize ->
-                    if (intSize.height <= 0) return@UsageDashboard
-                    val contentHeightDp = with(density) { intSize.height.toDp() }
-                    if (abs((windowState.size.height - contentHeightDp).value) > 0.5f) {
-                        windowState.size = DpSize(POPUP_WIDTH_DP.dp, contentHeightDp)
-                    }
-                },
-                onClose = { popupVisible = false },
-            )
+            // Drive the window size from the measured content. Keyed on windowState.size
+            // too: when Compose's componentResized feedback clobbers the size back to a
+            // stale value (which happens when the window is recreated while visible after
+            // a monitor change), re-assert the content-driven size instead of staying
+            // stuck. Also pins the width to POPUP_WIDTH_DP against the same feedback.
+            LaunchedEffect(lastContentPx, windowState.size, density) {
+                if (lastContentPx.height <= 0) return@LaunchedEffect
+                val targetHeight = with(density) { lastContentPx.height.toDp() }
+                val off = abs((windowState.size.height - targetHeight).value) > 0.5f ||
+                    abs((windowState.size.width - POPUP_WIDTH_DP.dp).value) > 0.5f
+                if (off) windowState.size = DpSize(POPUP_WIDTH_DP.dp, targetHeight)
+            }
+
+            // Re-anchor after the window becomes visible or its content-driven size changes.
+            // Re-apply the backdrop on each show: hiding a layered window on Windows
+            // drops the composition attribute, so the blur would otherwise be lost.
+            LaunchedEffect(popupVisible, windowState.size) {
+                val click = trayClick
+                val window = composeWindowRef.value
+                if (popupVisible && click != null && window != null) {
+                    // Position from the target size (windowState, in dp == AWT user px),
+                    // not the live window height, which may still be the pre-grow value.
+                    setWindowPosition(
+                        click, window,
+                        windowState.size.width.value.roundToInt(),
+                        windowState.size.height.value.roundToInt(),
+                    )
+                    Backdrop.apply(window)
+                }
+            }
+
+            ClaudeInfoTheme {
+                UsageDashboard(
+                    viewModel = viewModel,
+                    backgroundColor = Backdrop.surfaceTint(),
+                    onContentSizeChanged = { intSize ->
+                        if (intSize.height > 0) lastContentPx = intSize
+                    },
+                    onClose = { popupVisible = false },
+                )
+            }
         }
     }
 }
 
-fun setWindowPosition(click: IntOffset, window: ComposeWindow) {
-    // AWT MouseEvent.xOnScreen for tray icons reports device pixels on HiDPI Windows,
-    // while JFrame.setLocation expects user-space pixels. Find the screen containing
-    // the click (in device space) and convert to user-space via its transform.
+/** The screen device whose device-pixel bounds contain [click] (tray clicks report device px). */
+fun screenDeviceAt(click: IntOffset): GraphicsDevice {
     val env = GraphicsEnvironment.getLocalGraphicsEnvironment()
-    val device = env.screenDevices.firstOrNull { d ->
+    return env.screenDevices.firstOrNull { d ->
         val b = d.defaultConfiguration.bounds
         val tx = d.defaultConfiguration.defaultTransform
         val devX = (b.x * tx.scaleX).toInt()
@@ -130,6 +199,24 @@ fun setWindowPosition(click: IntOffset, window: ComposeWindow) {
         val devH = (b.height * tx.scaleY).toInt()
         click.x in devX until (devX + devW) && click.y in devY until (devY + devH)
     } ?: env.defaultScreenDevice
+}
+
+/**
+ * A signature of the current monitor layout (each screen's bounds + scale). Changes
+ * when monitors are added/removed or rescaled — i.e. on dock/undock or a scaling change.
+ */
+fun screenConfigSignature(): String =
+    GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.joinToString("|") { d ->
+        val b = d.defaultConfiguration.bounds
+        val s = d.defaultConfiguration.defaultTransform.scaleX
+        "${b.x},${b.y},${b.width},${b.height}@$s"
+    }
+
+fun setWindowPosition(click: IntOffset, window: ComposeWindow, widthPx: Int, heightPx: Int) {
+    // AWT MouseEvent.xOnScreen for tray icons reports device pixels on HiDPI Windows,
+    // while JFrame.setLocation expects user-space pixels. Find the screen containing
+    // the click (in device space) and convert to user-space via its transform.
+    val device = screenDeviceAt(click)
 
     val config: GraphicsConfiguration = device.defaultConfiguration
     val scaleX = config.defaultTransform.scaleX.takeIf { it > 0 } ?: 1.0
@@ -144,9 +231,6 @@ fun setWindowPosition(click: IntOffset, window: ComposeWindow) {
     val workTop = screen.y + insets.top
     val workRight = screen.x + screen.width - insets.right
     val workBottom = screen.y + screen.height - insets.bottom
-
-    val widthPx = if (window.width > 0) window.width else POPUP_WIDTH_DP
-    val heightPx = if (window.height > 0) window.height else INITIAL_HEIGHT_DP
 
     // Anchor the popup to the opposite side of the taskbar (deduced from the
     // largest non-zero inset). On a top taskbar the popup drops down; on a side

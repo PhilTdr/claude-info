@@ -44,23 +44,13 @@ class TrayController(
             isAlwaysOnTop = true
         }
 
-        val contextMenu = javax.swing.JPopupMenu().apply {
-            add(javax.swing.JMenuItem(quitLabel).apply {
-                addActionListener {
-                    trayIcon?.let { tray.remove(it) }
-                    exitProcess(0)
-                }
-            })
-            addPopupMenuListener(object : javax.swing.event.PopupMenuListener {
-                override fun popupMenuWillBecomeVisible(e: javax.swing.event.PopupMenuEvent) {}
-                override fun popupMenuWillBecomeInvisible(e: javax.swing.event.PopupMenuEvent) {
-                    popupAnchor.isVisible = false
-                }
-                override fun popupMenuCanceled(e: javax.swing.event.PopupMenuEvent) {
-                    popupAnchor.isVisible = false
-                }
-            })
-        }
+        val contextMenu = buildContextMenu(
+            onSelect = {
+                trayIcon?.let { tray.remove(it) }
+                exitProcess(0)
+            },
+            onHidden = { popupAnchor.isVisible = false },
+        )
 
         val icon = TrayIcon(image, tooltip, null).apply {
             isImageAutoSize = true
@@ -91,6 +81,60 @@ class TrayController(
         val icon = trayIcon ?: return
         runCatching { SystemTray.getSystemTray().remove(icon) }
         trayIcon = null
+    }
+
+    // The default Swing JMenuItem reserves a left gutter for an icon/check mark and
+    // renders in the platform Look&Feel — on Windows that produces the empty left
+    // spacing and a bright menu that clashes with the dark, frosted popup window.
+    // We build the menu from a plain JLabel instead so we fully control padding and
+    // colors: dark Claude surface, light text, orange hover, no icon gutter.
+    private fun buildContextMenu(
+        onSelect: () -> Unit,
+        onHidden: () -> Unit,
+    ): javax.swing.JPopupMenu {
+        val surface = java.awt.Color(0x1A1715)
+        val onSurface = java.awt.Color(0xE6E1DC)
+        val accent = java.awt.Color(0xD97757)
+        val outline = java.awt.Color(0x3A332F)
+
+        val item = javax.swing.JLabel(quitLabel).apply {
+            isOpaque = true
+            background = surface
+            foreground = onSurface
+            font = font.deriveFont(13f)
+            border = javax.swing.BorderFactory.createEmptyBorder(8, 16, 8, 28)
+            horizontalAlignment = javax.swing.SwingConstants.LEFT
+            cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+            addMouseListener(object : MouseAdapter() {
+                override fun mouseEntered(e: MouseEvent) {
+                    background = accent
+                    foreground = java.awt.Color.BLACK
+                }
+                override fun mouseExited(e: MouseEvent) {
+                    background = surface
+                    foreground = onSurface
+                }
+                override fun mouseReleased(e: MouseEvent) {
+                    onSelect()
+                }
+            })
+        }
+
+        return javax.swing.JPopupMenu().apply {
+            isOpaque = true
+            background = surface
+            border = javax.swing.BorderFactory.createLineBorder(outline, 1)
+            add(item)
+            addPopupMenuListener(object : javax.swing.event.PopupMenuListener {
+                override fun popupMenuWillBecomeVisible(e: javax.swing.event.PopupMenuEvent) {}
+                override fun popupMenuWillBecomeInvisible(e: javax.swing.event.PopupMenuEvent) {
+                    onHidden()
+                }
+                override fun popupMenuCanceled(e: javax.swing.event.PopupMenuEvent) {
+                    onHidden()
+                }
+            })
+        }
     }
 
     private data class ScreenContext(val userPoint: IntOffset, val config: GraphicsConfiguration)

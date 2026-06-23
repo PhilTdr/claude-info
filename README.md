@@ -14,6 +14,7 @@ Small tray tool that shows how many tokens Claude Code has used and what that wo
   - Prices are fetched from the LiteLLM API every 60 min.
 - Left-clicking the tray icon opens the UI in a popup with a native blur backdrop (Acrylic on Windows 10/11, NSVisualEffectView vibrancy on macOS, semi-transparent Compose fallback on Linux). X closes the window, the app keeps running in the tray. Right-click offers a "Start with Windows/macOS/Linux" toggle and the option to quit.
 - Reads usage data exclusively from local `~/.claude/projects/**/*.jsonl`. No Anthropic API calls, no API key.
+- Update check
 
 ## Installation
 
@@ -47,7 +48,7 @@ You need JDK 17+ with `JAVA_HOME` set. CI runs on JDK 21.
 
 Kotlin with Compose Multiplatform (JVM target for desktop)
 Material 3
-Ktor (CIO) for the LiteLLM pricing fetch
+Ktor (CIO) for the LiteLLM pricing fetch and the GitHub release/update check
 kotlinx-serialization / -datetime for date and JSON handling
 Tray integration via `java.awt.SystemTray` + `PopupMenu`
 The native blur backdrops use JNA: on Windows `user32!SetWindowCompositionAttribute` is called, on macOS an `NSVisualEffectView` is wrapped and the Metal clear color is made transparent via Skiko reflection. Signing happens in CI with jsign (Windows) and `codesign` (macOS).
@@ -63,6 +64,7 @@ shared/commonMain/      domain (models, repository interfaces)
 shared/jvmMain/         ClaudeInfoApp (manual DI)
                         JSONL parser & tail cache
                         pricing fetch (Ktor) + refresh loop
+                        GitHub update check (Ktor)
                         settings.json reader
 desktopApp/             main.kt (window setup, focus loss)
                         backdrop/ (Windows / macOS / Linux fallback)

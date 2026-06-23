@@ -19,6 +19,9 @@ plugins {
 
 val jsignClasspath: Configuration by configurations.creating
 
+// The app version, resolved from the git tag in the root build (see build.gradle.kts).
+val appVersion: String = rootProject.extra["appVersion"] as String
+
 dependencies {
     implementation(projects.shared)
 
@@ -46,7 +49,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "ClaudeInfo"
-            packageVersion = "1.0.0"
+            packageVersion = appVersion
             description = "Claude Nutzungsstatistiken im System Tray"
 
             macOS {

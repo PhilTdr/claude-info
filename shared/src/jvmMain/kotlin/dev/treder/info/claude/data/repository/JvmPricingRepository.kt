@@ -7,6 +7,7 @@ import dev.treder.info.claude.domain.model.PricingTable
 import dev.treder.info.claude.domain.repository.PricingRepository
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,6 +60,8 @@ class JvmPricingRepository(
         }.onSuccess { table ->
             _state.value = PricingState.Ready(table)
         }.onFailure {
+            // Let cancellation propagate; runCatching would otherwise swallow it.
+            if (it is CancellationException) throw it
             // Fall back to the previous fetch: only report failure when we have
             // never had a table to show.
             if (_state.value !is PricingState.Ready) {

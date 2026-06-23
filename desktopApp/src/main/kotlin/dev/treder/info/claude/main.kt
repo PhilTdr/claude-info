@@ -181,6 +181,7 @@ fun main() = application(exitProcessOnExit = true) {
                         if (intSize.height > 0) lastContentPx = intSize
                     },
                     onClose = { popupVisible = false },
+                    onOpenUrl = { url -> UrlOpener.open(url) },
                 )
             }
         }

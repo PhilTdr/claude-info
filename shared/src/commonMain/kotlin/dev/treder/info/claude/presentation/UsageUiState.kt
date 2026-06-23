@@ -2,6 +2,7 @@ package dev.treder.info.claude.presentation
 
 import dev.treder.info.claude.domain.model.DayUsage
 import dev.treder.info.claude.domain.model.MonthUsage
+import dev.treder.info.claude.domain.model.UpdateStatus
 
 /** What the UI needs to know about the pricing feed, decoupled from the data layer. */
 enum class PricingPhase {
@@ -21,6 +22,8 @@ data class UsageUiState(
     val history: List<MonthUsage>? = null,
     val preferredModel: String? = null,
     val error: String? = null,
+    /** Update availability — drives the title-bar update hint. */
+    val updateStatus: UpdateStatus = UpdateStatus.NoUpdate,
 ) {
     /** True once prices and both usage sections have loaded — the happy-path render. */
     val isReady: Boolean

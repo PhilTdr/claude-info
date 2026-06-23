@@ -5,9 +5,12 @@ import dev.treder.info.claude.data.jsonl.JsonlUsageParser
 import dev.treder.info.claude.data.pricing.LiteLlmPricingApi
 import dev.treder.info.claude.data.repository.JsonlEntryCache
 import dev.treder.info.claude.data.repository.JvmPricingRepository
+import dev.treder.info.claude.data.repository.JvmUpdateRepository
 import dev.treder.info.claude.data.repository.JvmUsageRepository
 import dev.treder.info.claude.data.settings.ClaudeSettingsReader
+import dev.treder.info.claude.data.update.GitHubReleaseApi
 import dev.treder.info.claude.domain.repository.PricingRepository
+import dev.treder.info.claude.domain.repository.UpdateRepository
 import dev.treder.info.claude.domain.repository.UsageRepository
 import dev.treder.info.claude.presentation.UsageViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +39,13 @@ class ClaudeInfoApp {
     private val aggregator = UsageAggregator()
     private val settingsReader = ClaudeSettingsReader()
 
+    // Polls the GitHub release feed for newer versions, independent of the popup.
+    private val updateRepository: UpdateRepository = JvmUpdateRepository(
+        currentVersion = BuildConfig.APP_VERSION,
+        api = GitHubReleaseApi(),
+        scope = appScope,
+    )
+
     val usageRepository: UsageRepository = JvmUsageRepository(
         cache = entryCache,
         aggregator = aggregator,
@@ -46,6 +56,7 @@ class ClaudeInfoApp {
     fun createViewModel(): UsageViewModel = UsageViewModel(
         usageRepository = usageRepository,
         pricingRepository = pricingRepository,
+        updateRepository = updateRepository,
         preferredModelProvider = { settingsReader.readPreferredModel() },
     )
 }

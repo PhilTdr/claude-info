@@ -12,7 +12,7 @@ Small tray tool that shows how many tokens Claude Code has used and what that wo
 - Usage updates continuously in the UI.
   - Token usage is read from the JSONL file every 10s. (Only the new tail segment is parsed, so it stays performant even with many sessions.)
   - Prices are fetched from the LiteLLM API every 60 min.
-- Left-clicking the tray icon opens the UI in a popup with a native blur backdrop (Acrylic on Windows 10/11, NSVisualEffectView vibrancy on macOS, semi-transparent Compose fallback on Linux). X closes the window, the app keeps running in the tray. Right-click offers the option to quit.
+- Left-clicking the tray icon opens the UI in a popup with a native blur backdrop (Acrylic on Windows 10/11, NSVisualEffectView vibrancy on macOS, semi-transparent Compose fallback on Linux). X closes the window, the app keeps running in the tray. Right-click offers a "Start with Windows/macOS/Linux" toggle and the option to quit.
 - Reads usage data exclusively from local `~/.claude/projects/**/*.jsonl`. No Anthropic API calls, no API key.
 
 ## Installation

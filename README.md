@@ -30,7 +30,9 @@ Ready-made installers are available on the [releases page](https://github.com/Ph
 ### First launch
 
 - **Windows**: SmartScreen popup → "More info" → "Run anyway". The installer dialog lists `treder.dev Apps` as the publisher.
-- **macOS**: A double-click is blocked. Right-click the `.app` → "Open" → "Open" again. macOS remembers this per machine.
+- **macOS**: Open with double click → App is blocked.
+  - Option 1: Right-click the `.app` → "Open" → "Open" again. macOS remembers this per machine.
+  - Option 2: Settings → Privacy & Security → "ClaudeInfo" was blocked to protect your Mac → Open Anyway [Screenshot](docs/mac_settings_security.png)
 - **Linux**: `sudo dpkg -i claude-info_*.deb`. Whether the tray icon actually shows up depends on the desktop environment.
 
 ## For developers

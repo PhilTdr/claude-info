@@ -218,7 +218,7 @@ private fun Header(
                 if (updateStatus is UpdateStatus.UpdateAvailable) {
                     Text(
                         text = "Update verfügbar",
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier
                             .alignByBaseline()

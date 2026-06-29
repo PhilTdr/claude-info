@@ -1,12 +1,19 @@
 package dev.treder.info.claude.presentation.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
@@ -16,23 +23,34 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.treder.info.claude.domain.model.MonthUsage
 import dev.treder.info.claude.domain.model.UpdateStatus
+import dev.treder.info.claude.domain.model.UsageLimitsStatus
 import dev.treder.info.claude.presentation.PricingPhase
 import dev.treder.info.claude.presentation.UsageUiState
 import dev.treder.info.claude.presentation.UsageViewModel
+import kotlin.math.roundToInt
 import kotlinx.datetime.Month
 
 @Composable
@@ -69,6 +87,7 @@ fun UsageDashboard(
             Header(
                 preferredModel = state.preferredModel,
                 updateStatus = state.updateStatus,
+                limitsStatus = state.usageLimitsStatus,
                 onOpenUrl = onOpenUrl,
                 onClose = onClose,
             )
@@ -83,7 +102,7 @@ fun UsageDashboard(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             Text(
-                text = "Statistiken stammen ausschließlich aus Claude-Sessions auf diesem Gerät.",
+                text = "Nutzungslimits werden von der Claude API abgerufen. Die Statistiken stammen ausschließlich aus Claude-Sessions auf diesem Gerät.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.padding(top = 4.dp),
@@ -146,6 +165,11 @@ private fun PricingErrorContent(onRetry: () -> Unit) {
 /** The full dashboard once prices and usage data are available. */
 @Composable
 private fun UsageContent(state: UsageUiState) {
+    if (state.usageLimits.isNotEmpty()) {
+        UsageLimitsSection(limits = state.usageLimits)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    }
+
     PeriodSection(
         title = "Heute",
         period = state.today,
@@ -199,53 +223,136 @@ private fun UsageContent(state: UsageUiState) {
 private fun Header(
     preferredModel: String?,
     updateStatus: UpdateStatus,
+    limitsStatus: UsageLimitsStatus,
     onOpenUrl: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-        verticalAlignment = Alignment.Top,
+    val warningText = limitsWarningText(limitsStatus)
+    var headerCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var iconCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val showTooltip = warningText != null && hovered
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .zIndex(if (showTooltip) 1f else 0f)
+            .onGloballyPositioned { headerCoords = it },
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Claude Info",
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.alignByBaseline(),
-                )
-                if (updateStatus is UpdateStatus.UpdateAvailable) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Update verfügbar",
+                        text = "Claude Info",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.alignByBaseline(),
+                    )
+                    if (updateStatus is UpdateStatus.UpdateAvailable) {
+                        Text(
+                            text = "Update verfügbar",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier
+                                .alignByBaseline()
+                                .pointerHoverIcon(PointerIcon.Hand)
+                                .clickable { onOpenUrl(updateStatus.url) },
+                        )
+                    }
+                }
+                if (!preferredModel.isNullOrBlank()) {
+                    Text(
+                        text = "Bevorzugtes Modell: $preferredModel",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier
-                            .alignByBaseline()
-                            .pointerHoverIcon(PointerIcon.Hand)
-                            .clickable { onOpenUrl(updateStatus.url) },
                     )
                 }
             }
-            if (!preferredModel.isNullOrBlank()) {
+            if (warningText != null) {
                 Text(
-                    text = "Bevorzugtes Modell: $preferredModel",
+                    text = "⚠",
+                    color = Color(0xFFFFB4A2),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier
+                        .padding(end = 6.dp)
+                        .pointerHoverIcon(PointerIcon.Default)
+                        .hoverable(interactionSource)
+                        .onGloballyPositioned { iconCoords = it },
+                )
+            }
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier.size(24.dp),
+            ) {
+                Text(
+                    text = "✕",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.titleSmall,
                 )
             }
         }
-        IconButton(
-            onClick = onClose,
-            modifier = Modifier.size(24.dp),
-        ) {
-            Text(
-                text = "✕",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.titleSmall,
-            )
+
+        if (hovered) {
+            warningText?.let { text ->
+                val header = headerCoords
+                val icon = iconCoords
+                val anchorRect: Rect? =
+                    if (header != null && icon != null && header.isAttached && icon.isAttached) {
+                        header.localBoundingBoxOf(icon, clipBounds = false)
+                    } else {
+                        null
+                    }
+                LimitsWarningTooltip(anchorRect = anchorRect, text = text)
+            }
         }
     }
+}
+
+/** Hover hint for the header warning icon, dropped just below it. */
+@Composable
+private fun LimitsWarningTooltip(anchorRect: Rect?, text: String) {
+    val gapPx = with(LocalDensity.current) { 4.dp.roundToPx() }
+    Box(
+        modifier = Modifier
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                // Zero-size node: the tooltip overlays without affecting the header height.
+                layout(0, 0) {
+                    val rect = anchorRect ?: return@layout
+                    val maxX = (constraints.maxWidth - placeable.width).coerceAtLeast(0)
+                    val x = (rect.right - placeable.width).toInt().coerceIn(0, maxX)
+                    val y = (rect.bottom + gapPx).roundToInt()
+                    placeable.place(x, y)
+                }
+            }
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.97f))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = text,
+            color = MaterialTheme.colorScheme.inverseOnSurface,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.widthIn(max = 260.dp),
+        )
+    }
+}
+
+/** The warning message for the header icon, or null when no warning should show. */
+private fun limitsWarningText(status: UsageLimitsStatus): String? = when (status) {
+    UsageLimitsStatus.Unavailable ->
+        "Die Limit-Anzeige ist momentan nicht verfügbar (Authentifizierung). " +
+            "Führe \"claude /login\" im Terminal aus um die Session zu erneuern."
+    UsageLimitsStatus.RateLimited ->
+        "Die Nutzungslimits werden von der Claude API gerade gedrosselt (Rate-Limit). " +
+            "Die angezeigten Werte können veraltet sein und aktualisieren sich automatisch, " +
+            "sobald der Server wieder bereit ist."
+    UsageLimitsStatus.Loading, UsageLimitsStatus.Available -> null
 }
 
 private fun formatMonth(month: MonthUsage): String {

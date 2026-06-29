@@ -9,4 +9,7 @@ object JsonlPaths {
 
     val claudeSettingsFile: Path
         get() = Paths.get(System.getProperty("user.home"), ".claude", "settings.json")
+
+    val claudeCredentialsFile: Path
+        get() = Paths.get(System.getProperty("user.home"), ".claude", ".credentials.json")
 }

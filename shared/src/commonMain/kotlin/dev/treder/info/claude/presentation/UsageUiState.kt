@@ -3,6 +3,8 @@ package dev.treder.info.claude.presentation
 import dev.treder.info.claude.domain.model.DayUsage
 import dev.treder.info.claude.domain.model.MonthUsage
 import dev.treder.info.claude.domain.model.UpdateStatus
+import dev.treder.info.claude.domain.model.UsageLimit
+import dev.treder.info.claude.domain.model.UsageLimitsStatus
 
 /** What the UI needs to know about the pricing feed, decoupled from the data layer. */
 enum class PricingPhase {
@@ -24,6 +26,10 @@ data class UsageUiState(
     val error: String? = null,
     /** Update availability — drives the title-bar update hint. */
     val updateStatus: UpdateStatus = UpdateStatus.NoUpdate,
+    /** Usage-limit bars shown above the statistics; empty hides the section. */
+    val usageLimits: List<UsageLimit> = emptyList(),
+    /** Availability of the limit feed — drives the header warning icon and its message. */
+    val usageLimitsStatus: UsageLimitsStatus = UsageLimitsStatus.Loading,
 ) {
     /** True once prices and both usage sections have loaded — the happy-path render. */
     val isReady: Boolean

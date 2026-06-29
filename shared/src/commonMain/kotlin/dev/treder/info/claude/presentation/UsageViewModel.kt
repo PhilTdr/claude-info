@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dev.treder.info.claude.domain.model.PricingState
 import dev.treder.info.claude.domain.repository.PricingRepository
 import dev.treder.info.claude.domain.repository.UpdateRepository
+import dev.treder.info.claude.domain.repository.UsageLimitsRepository
 import dev.treder.info.claude.domain.repository.UsageRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,7 @@ class UsageViewModel(
     private val usageRepository: UsageRepository,
     private val pricingRepository: PricingRepository,
     private val updateRepository: UpdateRepository,
+    private val usageLimitsRepository: UsageLimitsRepository,
     private val preferredModelProvider: suspend () -> String? = { null },
 ) : ViewModel() {
 
@@ -38,6 +40,16 @@ class UsageViewModel(
         viewModelScope.launch {
             updateRepository.isUpdateAvailable.collect { status ->
                 _state.update { it.copy(updateStatus = status) }
+            }
+        }
+        viewModelScope.launch {
+            usageLimitsRepository.getUsageLimits().collect { limits ->
+                _state.update { it.copy(usageLimits = limits) }
+            }
+        }
+        viewModelScope.launch {
+            usageLimitsRepository.status.collect { status ->
+                _state.update { it.copy(usageLimitsStatus = status) }
             }
         }
         viewModelScope.launch {

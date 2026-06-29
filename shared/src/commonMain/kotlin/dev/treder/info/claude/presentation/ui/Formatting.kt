@@ -2,6 +2,11 @@ package dev.treder.info.claude.presentation.ui
 
 import kotlin.math.abs
 import kotlin.math.roundToLong
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 
 internal fun formatTokens(value: Long): String {
     val abs = abs(value)
@@ -55,6 +60,26 @@ internal fun formatModelName(model: String?): String {
         version.isNotBlank() -> version
         else -> raw
     }
+}
+
+/** Formats a local time as zero-padded "HH:mm", e.g. 14:10 -> "14:10". */
+internal fun formatResetTime(dateTime: LocalDateTime): String {
+    val hour = dateTime.hour.toString().padStart(2, '0')
+    val minute = dateTime.minute.toString().padStart(2, '0')
+    return "$hour:$minute"
+}
+
+/**
+ * Formats a reset moment: just "HH:mm" when it is less than 23 hours away (e.g. the 5-hour
+ * window), or "dd.MM., HH:mm" once it is at least 23 hours in the future (e.g. the weekly window).
+ */
+internal fun formatReset(resetAt: LocalDateTime, now: Instant, zone: TimeZone): String {
+    val time = formatResetTime(resetAt)
+    val farAhead = resetAt.toInstant(zone) - now >= 23.hours
+    if (!farAhead) return time
+    val day = resetAt.date.day.toString().padStart(2, '0')
+    val month = (resetAt.date.month.ordinal + 1).toString().padStart(2, '0')
+    return "$day.$month., $time"
 }
 
 /** Formats a 0..1 share as a rounded percentage, e.g. 0.84 -> "84 %". */

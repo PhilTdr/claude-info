@@ -2,6 +2,9 @@ package dev.treder.info.claude.presentation.ui
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.time.Instant
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
 
 class FormattingTest {
 
@@ -43,5 +46,25 @@ class FormattingTest {
         assertEquals("<1 %", formatPercent(0.004))
         assertEquals("0 %", formatPercent(0.0))
         assertEquals("0 %", formatPercent(Double.NaN))
+    }
+
+    @Test
+    fun formatResetShowsTimeOnlyWithin23Hours() {
+        val zone = TimeZone.UTC
+        val now = Instant.parse("2026-06-29T08:00:00Z")
+        // 5 h ahead -> time only
+        assertEquals("13:00", formatReset(LocalDateTime(2026, 6, 29, 13, 0), now, zone))
+        // 22 h ahead (next calendar day, but < 23 h) -> still time only
+        assertEquals("06:00", formatReset(LocalDateTime(2026, 6, 30, 6, 0), now, zone))
+    }
+
+    @Test
+    fun formatResetAddsDateFrom23HoursAhead() {
+        val zone = TimeZone.UTC
+        val now = Instant.parse("2026-06-29T08:00:00Z")
+        // exactly 23 h ahead -> date appears
+        assertEquals("30.06., 07:00", formatReset(LocalDateTime(2026, 6, 30, 7, 0), now, zone))
+        // several days ahead -> date
+        assertEquals("06.07., 09:00", formatReset(LocalDateTime(2026, 7, 6, 9, 0), now, zone))
     }
 }

@@ -16,21 +16,6 @@ data class YearMonth(val year: Int, val month: Month) : Comparable<YearMonth> {
         }
     }
 
-    fun minusMonths(count: Long): YearMonth {
-        var y = year
-        var m = month.ordinal
-        var remaining = count
-        while (remaining > 0) {
-            m -= 1
-            if (m < 0) {
-                m = 11
-                y -= 1
-            }
-            remaining -= 1
-        }
-        return YearMonth(y, Month.entries[m])
-    }
-
     override fun compareTo(other: YearMonth): Int =
         compareValuesBy(this, other, { it.year }, { it.month.ordinal })
 

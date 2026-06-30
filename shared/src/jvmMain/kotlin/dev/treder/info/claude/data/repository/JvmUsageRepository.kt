@@ -55,12 +55,22 @@ class JvmUsageRepository(
 
     override fun getHistoryUsage(): Flow<List<MonthUsage>> =
         combine(entries, pricingTable) { snapshot, table ->
-            val month = currentMonth()
-            (0..2L).mapNotNull { offset ->
-                aggregator.aggregateMonth(snapshot, month.minusMonths(offset), zone, table)
-            }
+            // The full history, newest first. Entries are grouped by month once
+            // and each month is aggregated from only its own entries; months
+            // without data are simply absent, so the pager shows exactly the
+            // months that exist. Future-dated entries (clock skew, corrupt
+            // timestamps) are dropped so a bogus future month can't hijack the
+            // newest slot and become the default page.
+            val currentMonth = YearMonth.from(today())
+            snapshot
+                .groupBy { YearMonth.from(it.timestamp.toLocalDateTime(zone).date) }
+                .entries
+                .filter { it.key <= currentMonth }
+                .sortedByDescending { it.key }
+                .mapNotNull { (month, monthEntries) ->
+                    aggregator.aggregateMonth(monthEntries, month, zone, table)
+                }
         }.distinctUntilChanged()
 
     private fun today(): LocalDate = clock.now().toLocalDateTime(zone).date
-    private fun currentMonth(): YearMonth = YearMonth.from(today())
 }
